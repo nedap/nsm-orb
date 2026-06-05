@@ -1,0 +1,86 @@
+# Action to determine build info options. This info is used to show version information like workflow id, branch name and git sha
+
+name: 'Build Info Options'
+description: 'Return build options for maven or gradle builds'
+
+inputs:
+  build-tool:
+    description: Tool used to build the Java application, eiher maven or gradle
+    required: true
+  enable-sonar:
+    description: 'Enable sonar analysis for this build?'
+    required: false
+    default: 'false'
+
+outputs:
+  commit-sha:
+    description: 'The commit SHA that triggered the workflow. Unless this is a PR then its the commit SHA of the last commit on that PR.'
+    value: ${{ steps.info.outputs.commit-sha }}
+  branch-name:
+    description: 'Name of the branch. Unless this is a PR then its the name of head branch name.'
+    value: ${{ steps.info.outputs.branch-name }}
+  build-info:
+    description: 'The information above, but returned as maven or gradle build options. Aka of the format `-Dbuild.xxx=yyy` or `-Pbuild.xxx=yyy.`'
+    value: ${{ steps.info.outputs.build-info }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: "Determine Build Info"
+      id: info
+      shell: bash
+      env:
+        BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
+        COMMIT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        RUN_NUMBER: ${{ github.run_number }}
+        BUILD_TOOL: ${{ inputs.build-tool }}
+        ENABLE_SONAR: ${{ inputs.enable-sonar }}
+        PULL_REQUEST_NUMBER: ${{ github.event.pull_request.number }}
+        BASE_BRANCH: ${{ github.event.pull_request.base.ref }}
+        EVENT_NAME: ${{ github.event_name }}
+      run: |
+        # Disclose branch name and commit sha
+        echo "branch-name=$BRANCH_NAME" >> $GITHUB_OUTPUT
+        echo "commit-sha=$COMMIT_SHA" >> $GITHUB_OUTPUT
+
+        # Determine build info
+        BUILD_INFO=""
+
+        if [ $BUILD_TOOL == "maven" ]; then
+          # Maven opts
+          BUILD_INFO="-Dbuild.number=$RUN_NUMBER -Dbuild.revision=$COMMIT_SHA -Dbuild.branch=$BRANCH_NAME"
+          if [ $ENABLE_SONAR == "true" ]; then
+            if [ $EVENT_NAME == 'pull_request' ]; then
+              BUILD_INFO="-Pcoverage,sonar-PR $BUILD_INFO -Dsonar.pullrequest.key=$PULL_REQUEST_NUMBER -Dsonar.pullrequest.base=$BASE_BRANCH -Dsonar.pullrequest.branch=$BRANCH_NAME"
+            else
+              if [ $EVENT_NAME == 'merge_group' ]; then
+                BRANCH_NAME=$(echo $BRANCH_NAME | cut -d'/' -f2)
+              fi
+              BUILD_INFO="-Pcoverage,sonar $BUILD_INFO -Dsonar.branch.name=$BRANCH_NAME"
+            fi
+          fi
+        elif [ $BUILD_TOOL == "gradle" ]; then
+          # Gradle opts
+          BUILD_INFO="-Pbuild.number=$RUN_NUMBER -Pbuild.revision=$COMMIT_SHA -Pbuild.branch=$BRANCH_NAME"
+          if [ $ENABLE_SONAR == "true" ]; then
+            if [ $EVENT_NAME == 'pull_request' ]; then
+              BUILD_INFO="jacocoTestReport sonar $BUILD_INFO -Dsonar.pullrequest.key=$PULL_REQUEST_NUMBER -Dsonar.pullrequest.base=$BASE_BRANCH -Dsonar.pullrequest.branch=$BRANCH_NAME" 
+            else
+              if [ $EVENT_NAME == 'merge_group' ]; then
+                BRANCH_NAME=$(echo $BRANCH_NAME | cut -d'/' -f2)
+              fi
+              BUILD_INFO="jacocoTestReport sonar $BUILD_INFO -Dsonar.branch.name=$BRANCH_NAME"
+            fi
+          fi
+        else
+          echo "Unknown build tool $BUILD_TOOLS, expected 'maven' or 'gradle'!"
+        fi
+
+        echo "build-info=$BUILD_INFO" >> $GITHUB_OUTPUT
+
+        echo "::group::Build context"
+        echo "run-number=$RUN_NUMBER"
+        echo "commit-sha=$COMMIT_SHA"
+        echo "branch-name=$BRANCH_NAME"
+        echo "build-info=$BUILD_INFO"
+        echo "::endgroup::"

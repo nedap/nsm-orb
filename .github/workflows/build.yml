@@ -1,0 +1,54 @@
+name: Maven Package
+
+on:
+  push:
+    branches-ignore:
+    - nedap/main
+  pull_request:
+    branches-ignore:
+    - nedap/main
+  workflow_dispatch:
+    inputs:
+      git-ref:
+        description: 'The github ref that should be checked out. (e.g. refs/heads/main, refs/tags/1.0)'
+        default: ''
+        required: true
+        type: string
+      java-version:
+        description: 'The Java version to set up.'
+        default: '17'
+        required: true
+        type: string
+      args:
+        description: 'Arguments like -DskipTests -pl testbom,threads -am'
+        default: ''
+        required: false
+        type: string
+      skip-tests:
+        description: 'Skip tests execution'
+        default: true
+        required: true
+        type: boolean
+      deploy:
+        description: 'Deploy artifact(s) to repository'
+        default: false
+        required: true
+        type: boolean
+      debug:
+        description: 'Enable debug log'
+        default: false
+        required: true
+        type: boolean
+
+jobs:
+  build:
+    uses: 'nedap/nsm-orb/.github/workflows/maven.yml@nedap/main'
+    with:
+      git-ref: ${{ inputs.git-ref }}
+      java-version: ${{ inputs.java-version }}
+      maven-version: '3.8.8'
+      args: ${{ inputs.args }}
+      skip-tests: ${{ inputs.skip-tests }}
+      deploy: ${{ inputs.deploy }}
+      debug: ${{ inputs.debug }}
+    secrets: inherit
